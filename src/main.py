@@ -10,12 +10,12 @@ from load_csvs import load_all_csvs
 from preprocess import preprocess
 from train_models import train_lightgbm, train_xgboost
 from evaluate import evaluate_model
-from threat_modeling import map_threat_attributes
+from threat_modeling import map_threat_attributes, save_threat_table
 
 
-# ✅ Match YOUR folder names
-BASE_INPUT = Path("Input_Folder")
-BASE_OUTPUT = Path("Output_Folder")
+# Resolve paths relative to project root (one level above src/)
+BASE_INPUT = Path(__file__).parent.parent / "Input_Folder"
+BASE_OUTPUT = Path(__file__).parent.parent / "Output_Folder"
 
 
 def main():
@@ -23,6 +23,7 @@ def main():
 
     dataset_folder = input("Enter dataset folder name (inside Input_Folder/): ").strip()
     run_name = input("Enter output run folder name: ").strip()
+    llm_model = input("Enter Ollama model name for threat lookup [default: llama3.2]: ").strip() or "llama3.2"
 
     dataset_dir = BASE_INPUT / dataset_folder
     run_dir = BASE_OUTPUT / run_name
@@ -100,7 +101,7 @@ def main():
     pred_xgb_labels = le.inverse_transform(xgb_pred.astype(int))
 
     # Threat attribute mapping based on XGBoost prediction (primary model)
-    threat_attrs_df = map_threat_attributes(pred_xgb_labels)
+    threat_attrs_df = map_threat_attributes(pred_xgb_labels, model=llm_model)
 
     final_report = pd.DataFrame({
         "True_Label": true_labels,
@@ -112,6 +113,8 @@ def main():
     threat_report_path = run_dir / "threat_modeling_report.csv"
     final_report.to_csv(threat_report_path, index=False)
     print(f"[INFO] Threat modeling report saved: {threat_report_path}")
+
+    save_threat_table(final_report, run_dir)
 
     # Also save raw predictions file
     pred_path = run_dir / "predictions_test.csv"
@@ -142,6 +145,7 @@ def main():
         " - confusion_matrix_XGBoost.png",
         " - predictions_test.csv",
         " - threat_modeling_report.csv",
+        " - threat_modeling_table.png",
         " - comparison_summary.csv",
         " - comparison_summary.txt",
     ])
