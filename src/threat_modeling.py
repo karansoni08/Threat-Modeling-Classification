@@ -66,7 +66,7 @@ _FALLBACK_ENTRY = {
 }
 
 # ---------------------------------------------------------------------------
-# LLM-based lookup via Claude API
+# LLM-based lookup via Ollama (local)
 # ---------------------------------------------------------------------------
 _LLM_CACHE: dict[str, dict] = {}
 
@@ -84,49 +84,61 @@ Attack class: {label}
 Respond with ONLY the raw JSON object, no explanation, no markdown fences."""
 
 
-def _call_claude(label: str) -> dict:
-    """Call Claude API and parse JSON response."""
+def check_ollama(model: str = "llama3.2") -> None:
+    """Verify Ollama is running and the model is available. Raises on failure."""
     try:
-        import anthropic
+        import ollama  # type: ignore
     except ImportError:
-        print("[WARN] anthropic package not installed. Run: pip install anthropic")
-        return _FALLBACK_ENTRY.copy()
-
-    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from environment
-    prompt = _PROMPT_TEMPLATE.format(label=label)
-    try:
-        response = client.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=256,
-            messages=[{"role": "user", "content": prompt}],
+        raise RuntimeError(
+            "ollama package not installed. Run: pip install ollama"
         )
-        raw = response.content[0].text.strip()
-
-        # Extract JSON even if the model wraps it in markdown fences
-        json_match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if not json_match:
-            raise ValueError(f"No JSON found in response: {raw[:200]}")
-
-        parsed = json.loads(json_match.group())
-
-        entry = {
-            "Vector":  str(parsed.get("Vector",  "Unknown")),
-            "Impact":  str(parsed.get("Impact",  "Unknown")),
-            "Control": str(parsed.get("Control", "Manual Review")),
-            "Actor":   str(parsed.get("Actor",   "Unknown")),
-            "Risk":    str(parsed.get("Risk",    "Medium")),
-        }
-        if entry["Risk"] not in _RISK_COLORS:
-            entry["Risk"] = "Medium"
-        return entry
-
+    try:
+        ollama.chat(
+            model=model,
+            messages=[{"role": "user", "content": "ping"}],
+            options={"temperature": 0, "num_predict": 1},
+        )
     except Exception as exc:
-        print(f"[WARN] Claude API lookup failed for '{label}': {exc}")
-        return _FALLBACK_ENTRY.copy()
+        raise RuntimeError(
+            f"Cannot reach Ollama model '{model}'. "
+            f"Make sure Ollama is running ('ollama serve') and the model is pulled "
+            f"('ollama pull {model}'). Error: {exc}"
+        )
 
 
-def _resolve_label(label: str) -> dict:
-    """Return threat entry from known map, Claude API cache, or fresh API call."""
+def _call_ollama(label: str, model: str) -> dict:
+    """Call local Ollama model and parse JSON response."""
+    import ollama  # type: ignore  — already verified by check_ollama()
+
+    prompt = _PROMPT_TEMPLATE.format(label=label)
+    response = ollama.chat(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        options={"temperature": 0},
+    )
+    raw = response["message"]["content"].strip()
+
+    # Extract JSON even if the model wraps it in markdown fences
+    json_match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not json_match:
+        raise ValueError(f"No JSON found in response: {raw[:200]}")
+
+    parsed = json.loads(json_match.group())
+
+    entry = {
+        "Vector":  str(parsed.get("Vector",  "Unknown")),
+        "Impact":  str(parsed.get("Impact",  "Unknown")),
+        "Control": str(parsed.get("Control", "Manual Review")),
+        "Actor":   str(parsed.get("Actor",   "Unknown")),
+        "Risk":    str(parsed.get("Risk",    "Medium")),
+    }
+    if entry["Risk"] not in _RISK_COLORS:
+        entry["Risk"] = "Medium"
+    return entry
+
+
+def _resolve_label(label: str, model: str) -> dict:
+    """Return threat entry from known map, cache, or fresh Ollama call."""
     label_clean = label.strip()
 
     if label_clean in _KNOWN_THREAT_MAP:
@@ -135,8 +147,13 @@ def _resolve_label(label: str) -> dict:
     if label_clean in _LLM_CACHE:
         return _LLM_CACHE[label_clean]
 
-    print(f"[Claude] Querying threat attributes for: '{label_clean}'")
-    entry = _call_claude(label_clean)
+    print(f"[Ollama] Querying '{model}' for: '{label_clean}'")
+    try:
+        entry = _call_ollama(label_clean, model)
+    except Exception as exc:
+        print(f"[ERROR] Ollama call failed for '{label_clean}': {exc}")
+        entry = _FALLBACK_ENTRY.copy()
+
     _LLM_CACHE[label_clean] = entry
     return entry
 
@@ -145,17 +162,16 @@ def _resolve_label(label: str) -> dict:
 # Public API
 # ---------------------------------------------------------------------------
 
-def map_threat_attributes(label_series) -> pd.DataFrame:
+def map_threat_attributes(label_series, model: str = "llama3.2") -> pd.DataFrame:
     """
     Maps attack labels to structured threat modeling attributes.
     Known labels are resolved instantly; unknown labels are sent to the
-    Claude API (called once per unique label, then cached).
-    Requires ANTHROPIC_API_KEY environment variable.
+    local Ollama model (called once per unique label, then cached).
     """
     vectors, impacts, controls, actors, risks = [], [], [], [], []
 
     for label in label_series:
-        entry = _resolve_label(str(label))
+        entry = _resolve_label(str(label), model)
         vectors.append(entry["Vector"])
         impacts.append(entry["Impact"])
         controls.append(entry["Control"])

@@ -10,7 +10,7 @@ from load_csvs import load_all_csvs
 from preprocess import preprocess
 from train_models import train_lightgbm, train_xgboost
 from evaluate import evaluate_model
-from threat_modeling import map_threat_attributes, save_threat_table
+from threat_modeling import map_threat_attributes, save_threat_table, check_ollama
 
 
 # Resolve paths relative to project root (one level above src/)
@@ -23,11 +23,16 @@ def main():
 
     dataset_folder = input("Enter dataset folder name (inside Input_Folder/): ").strip()
     run_name = input("Enter output run folder name: ").strip()
-    llm_model = input("Enter Ollama model name for threat lookup [default: llama3.2]: ").strip() or "llama3.2"
+
 
     dataset_dir = BASE_INPUT / dataset_folder
     run_dir = BASE_OUTPUT / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
+
+    # Verify Ollama is reachable before spending time on training
+    print("[CHECK] Verifying Ollama (llama3.2)...")
+    check_ollama("llama3.2")
+    print("[CHECK] Ollama OK\n")
 
     # -------------------------
     # STEP 1: Load CSV dataset
@@ -101,7 +106,7 @@ def main():
     pred_xgb_labels = le.inverse_transform(xgb_pred.astype(int))
 
     # Threat attribute mapping based on XGBoost prediction (primary model)
-    threat_attrs_df = map_threat_attributes(pred_xgb_labels, model=llm_model)
+    threat_attrs_df = map_threat_attributes(pred_xgb_labels, model="llama3.2")
 
     final_report = pd.DataFrame({
         "True_Label": true_labels,
