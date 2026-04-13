@@ -17,34 +17,17 @@ A machine learning pipeline that classifies network traffic into attack categori
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
+git clone <https://github.com/karansoni08/Threat-Modeling-Classification.git>
 cd "Threat Modeling Classification"
 ```
 
-### 2. Create a Virtual Environment (Recommended)
-
-```bash
-python -m venv venv
-```
-
-Activate it:
-
-- **macOS / Linux:**
-  ```bash
-  source venv/bin/activate
-  ```
-- **Windows:**
-  ```bash
-  venv\Scripts\activate
-  ```
-
-### 3. Install Python Dependencies
+### 2. Install Python Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Install and Set Up Ollama
+### 3. Install and Set Up Ollama
 
 Ollama runs the local LLM used for threat attribute enrichment.
 
